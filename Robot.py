@@ -1,5 +1,9 @@
-from typing import Union, Tuple
-from Order import Order
+from typing import Union, Tuple, List
+
+from Constants import Constants
+from Order import Order, Market
+from CraftTable import CraftTable
+import math
 
 
 class Robot:
@@ -17,6 +21,33 @@ class Robot:
         self.x = x
         self.y = y
         self.order: Union[Order, None] = None
+
+    def estimate_gain(self, order: Order, target_market: Market, craft_tables: List[CraftTable]) -> float:
+        if self.possession != 0:
+            # 当该订单为售出订单时，该订单可以给机器人带来的收益仅仅是订单的价格
+            return order.price
+        else:
+            # 机器人买入物品的收益是市场上“买卖价差减去机器人对卖出该物体所需的成本的估计”的最大值
+            profits: List[float] = []
+            for buy_order in target_market.orders:
+                if buy_order.content[0] == 'b' and buy_order.content[1] == self.possession:
+                    # 找到了对应的购买订单
+                    profits.append(buy_order.price - self.estimate_cost(buy_order, target_market, craft_tables))
+            return max(profits) - order.price
+
+    def estimate_cost(self, order: Order, target_market: Market, craft_tables: List[CraftTable]) -> float:
+        target_position = (craft_tables[order.owner].x, craft_tables[order.owner].y)
+        estimate_time = self.time_estimate(target_position)
+        current_time_factor = self.time_factor
+        # 估计再过estimate_time后的系数
+        current_frame = 9000 * (1 - math.sqrt(1 - (1 - self.time_factor) ** 2 / (1 - 0.8) ** 2))
+        estimate_arrive_time = current_frame + estimate_time
+        if estimate_arrive_time < 9000:
+            estimate_factor = 0.8 + 0.2 * (1 - math.sqrt(1 - (1 - estimate_arrive_time / 9000) ** 2))
+        else:
+            estimate_factor = 0.8
+        # 成本即为卖出价乘以时间系数之差
+        return Constants.OBJECT_BUY_PRICE[order.content[1] - 1] * (current_time_factor - estimate_factor)
 
     def motion_control(self, target_position) -> Tuple[float, float]:
         # TODO 给定目标点，计算机器人的线速度与角速度

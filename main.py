@@ -103,7 +103,7 @@ def update_orders(craft_tables: List[CraftTable], target_market: Market):
             craft_table.update_orders(target_market)
 
 
-def take_orders(robots: List[Robot], target_market: Market):
+def take_orders(robots: List[Robot], target_market: Market, craft_tables: List[CraftTable]):
     for robot in robots:
         if robot.order is None:
             # 当机器人当前没有订单时，从市场接取订单
@@ -111,8 +111,8 @@ def take_orders(robots: List[Robot], target_market: Market):
             profits = list()
             for order in available_orders:
                 # 估算利润，其中成本的估计较为简单，仅考虑到了时间成本；而收益的估计较为复杂
-                gain = robot.estimate_gain()
-                cost = robot.estimate_cost()
+                gain = robot.estimate_gain(order, target_market, craft_tables)
+                cost = robot.estimate_cost(order, target_market, craft_tables)
                 profits.append(gain - cost)
             # 选择利润最大订单达成交易
             max_profit_index = profits.index(max(profits))
@@ -173,7 +173,7 @@ if __name__ == '__main__':
         # 工作台更新订单
         update_orders(env['craft_tables'], market)
         # 机器人接单
-        take_orders(env['robots'], market)
+        take_orders(env['robots'], market, env['craft_tables'])
         # 机器人根据订单进行运动规划
         line_speed, angle_speed = motion_control(env['robots'], env['craft_tables'])
 
