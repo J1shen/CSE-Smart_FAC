@@ -14,7 +14,7 @@ READ_EACH_ROBOT = 4
 READ_FINISH = 5
 
 
-def read_util_ok(read_map=False):
+def read_util_ok(env = None, read_map=False):
     # 从判题器的输出中读取数据，当read_map为True时，读取地图
     in_data = input()
     current_status = READ_FRAME_AND_MONEY
@@ -23,7 +23,10 @@ def read_util_ok(read_map=False):
     if read_map:
         current_status = READ_MAP
     next_status = current_status
-    env = dict()
+    first_read_env = False
+    if env is None:
+        env = dict()
+        first_read_env = True
     craft_table_to_read = -1
     robots_to_read = 4
     while in_data != "OK":
@@ -44,37 +47,62 @@ def read_util_ok(read_map=False):
             # 读取工作台数量
             craft_table_to_read = int(in_data)
             assert 1 <= craft_table_to_read <= 50
-            env['craft_tables']: List[CraftTable] = []
+            if first_read_env:
+                env['craft_tables']: List[CraftTable] = []
             next_status = READ_EACH_CRAFT_TABLE
         elif current_status == READ_EACH_CRAFT_TABLE:
             # 读取每一个工作台
             datas_in = in_data.split(' ')
-            craft = CraftTable(table_id=len(env['craft_tables']),
-                               table_type=int(datas_in[0]),
-                               x=float(datas_in[1]),
-                               y=float(datas_in[2]),
-                               rest_time=int(datas_in[3]),
-                               raw_status=int(datas_in[4]),
-                               product_status=int(datas_in[5]))
-            env['craft_tables'].append(craft)
+            if first_read_env:
+                craft = CraftTable(table_id=len(env['craft_tables']),
+                                   table_type=int(datas_in[0]),
+                                   x=float(datas_in[1]),
+                                   y=float(datas_in[2]),
+                                   rest_time=int(datas_in[3]),
+                                   raw_status=int(datas_in[4]),
+                                   product_status=int(datas_in[5]))
+                env['craft_tables'].append(craft)
+            else:
+                craft = env['craft_tables'][len(env['craft_tables']) - craft_table_to_read]
+                craft.rest_time = int(datas_in[3])
+                craft.raw_status=int(datas_in[4])
+                craft.product_status=int(datas_in[5])
+                env['craft_tables'][len(env['craft_tables']) - craft_table_to_read] = craft
+
             craft_table_to_read -= 1
             if craft_table_to_read == 0:
-                env['robots']: List[Robot] = []
+                if first_read_env:
+                    env['robots']: List[Robot] = []
                 next_status = READ_EACH_ROBOT
         elif current_status == READ_EACH_ROBOT:
             robot_data_in = in_data.split(' ')
-            robot = Robot(robot_id=len(env['robots']),
-                          at_table=int(robot_data_in[0]),
-                          possession=int(robot_data_in[1]),
-                          time_factor=float(robot_data_in[2]),
-                          collision_factor=float(robot_data_in[3]),
-                          angle_velocity=float(robot_data_in[4]),
-                          linear_velocity_x=float(robot_data_in[5]),
-                          linear_velocity_y=float(robot_data_in[6]),
-                          angle=float(robot_data_in[7]),
-                          x=float(robot_data_in[8]),
-                          y=float(robot_data_in[9]))
-            env['robots'].append(robot)
+            if first_read_env:
+                robot = Robot(robot_id=len(env['robots']),
+                              at_table=int(robot_data_in[0]),
+                              possession=int(robot_data_in[1]),
+                              time_factor=float(robot_data_in[2]),
+                              collision_factor=float(robot_data_in[3]),
+                              angle_velocity=float(robot_data_in[4]),
+                              linear_velocity_x=float(robot_data_in[5]),
+                              linear_velocity_y=float(robot_data_in[6]),
+                              angle=float(robot_data_in[7]),
+                              x=float(robot_data_in[8]),
+                              y=float(robot_data_in[9]))
+                env['robots'].append(robot)
+            else:
+                robot = env['robots'][len(env['robots']) - robots_to_read]
+                robot.at_table = int(robot_data_in[0])
+                robot.possession = int(robot_data_in[1])
+                robot.time_factor = float(robot_data_in[2])
+                robot.collision_factor = float(robot_data_in[3])
+                robot.angle_velocity = float(robot_data_in[4])
+                robot.linear_velocity_x = float(robot_data_in[5])
+                robot.linear_velocity_y = float(robot_data_in[6])
+                robot.angle = float(robot_data_in[7])
+                robot.x = float(robot_data_in[8])
+                robot.y = float(robot_data_in[9])
+                env['robots'][len(env['robots']) - robots_to_read] = robot
+
             robots_to_read -= 1
             if robots_to_read == 0:
                 next_status = READ_FINISH
@@ -105,8 +133,8 @@ def update_orders(craft_tables: List[CraftTable], target_market: Market):
 
 def take_orders(robots: List[Robot], target_market: Market, craft_tables: List[CraftTable]):
     for robot in robots:
-        if robot.order is None:
-            # 当机器人当前没有订单时，从市场接取订单
+        if robot.order is None or robot.order.status == Order.ORDER_FIN:
+            # 当机器人当前没有订单或该订单已经完成时，从市场接取订单
             available_orders = filter_possible_orders(robot, target_market)
             profits = list()
             for order in available_orders:
@@ -123,24 +151,24 @@ def take_orders(robots: List[Robot], target_market: Market, craft_tables: List[C
 
 
 def filter_possible_orders(robot: Robot, target_market: Market) -> List[Order]:
-    """
-    从市场中筛选出机器人可以接取的订单
-    """
+    # 从市场中筛选出机器人可以接取的订单
     available_orders = []
     robot_possession = robot.possession
-    order_type = 's'
+    order_type = 'b'
     if robot_possession == 0:
-        # 未携带物品 -- 只能购买
-        order_type = 'b'
-    if order_type == 'b':
+        # 未携带物品 -- 只能购买， 机器人购买对应卖出订单
+        order_type = 's'
+    if order_type == 's':
         # 购买可以买所有物品
         for order in target_market.orders:
-            if order.content[0] == order_type:
+            if order.content[0] == order_type and order.status == Order.ORDER_HANGUP:
                 available_orders.append(order)
     else:
         # 售出仅能售出相同类型的商品
         for order in target_market.orders:
-            if order.content[0] == order_type and order.content[1] == robot_possession:
+            if order.content[0] == order_type \
+                    and order.content[1] == robot_possession \
+                    and order.status == Order.ORDER_HANGUP:
                 available_orders.append(order)
     return available_orders
 
@@ -156,6 +184,17 @@ def motion_control(robots: List[Robot], crafts_table: List[CraftTable]):
             angle_speeds.append(0)
         else:
             # 有订单时，机器人移动到订单所在位置
+            if robot.order.owner == robot.at_table:
+                # 机器人已经到达工作台，完成订单
+                robot.order.status = Order.ORDER_FIN
+                if robot.order.content[0] == 'b':
+                    # 注意b指该订单为控制台买入，即机器人卖出
+                    sys.stdout.write('sell %d\n' % robot.id)
+                    sys.stderr.write('[STDOUT]: sell %d\n' % robot.id)
+                else:
+                    # 否则为机器人买入
+                    sys.stdout.write('buy %d\n' % robot.id)
+                    sys.stderr.write('[STDOUT]: buy %d\n' % robot.id)
             order = robot.order
             target_position = (crafts_table[order.owner].x, crafts_table[order.owner].y)
             linear, angle = robot.motion_control(target_position)
@@ -167,16 +206,17 @@ def motion_control(robots: List[Robot], crafts_table: List[CraftTable]):
 if __name__ == '__main__':
     work_map = read_util_ok(read_map=True)
     finish()
+    market = Market()
+    env = None
     while True:
-        env = read_util_ok()
-        market = Market()
+        env = read_util_ok(env)
         # 工作台更新订单
         update_orders(env['craft_tables'], market)
         # 机器人接单
         take_orders(env['robots'], market, env['craft_tables'])
         # 机器人根据订单进行运动规划
         line_speed, angle_speed = motion_control(env['robots'], env['craft_tables'])
-
+        sys.stdout.write('%d\n' % env['frame_id'])
         for robot_id in range(4):
             sys.stdout.write('forward %d %d\n' % (robot_id, line_speed[robot_id]))
             sys.stderr.write('[STDOUT]: forward %d %d\n' % (robot_id, line_speed[robot_id]))

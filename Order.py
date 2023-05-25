@@ -26,10 +26,11 @@ class Market:
     def __init__(self):
         self.orders = []
 
-    def create_order(self, owner, order_type, obj_id):
+    def create_order(self, owner, order_type, obj_id) -> Order:
         prize = Constants.OBJECT_SELL_PRICE[obj_id - 1] if order_type == 's' else Constants.OBJECT_BUY_PRICE[obj_id - 1]
         new_order = Order(order_id=len(self.orders),
                           owner=owner,
                           content=(order_type, obj_id),
                           price=prize)
         self.orders.append(new_order)
+        return new_order
