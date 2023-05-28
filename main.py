@@ -223,7 +223,7 @@ def motion_control(robots: List[Robot], crafts_table: List[CraftTable]) -> Tuple
 
 
 if __name__ == '__main__':
-    file_input = open("debug/debug_input", "r")
+    # file_input = open("debug/debug_input", "r")
     # work_map = read_util_ok(read_map=True, debug_input=file_input)
     work_map = read_util_ok(read_map=True)
     finish()
