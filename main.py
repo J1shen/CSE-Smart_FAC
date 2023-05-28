@@ -1,6 +1,7 @@
 #!/bin/bash
 import sys
-from typing import List
+import time
+from typing import List, Tuple, Union
 from Order import Order, Market
 from Robot import Robot
 from CraftTable import CraftTable
@@ -14,9 +15,11 @@ READ_EACH_ROBOT = 4
 READ_FINISH = 5
 
 
-def read_util_ok(env = None, read_map=False):
+def read_util_ok(env=None, read_map=False, debug_input=None):
     # 从判题器的输出中读取数据，当read_map为True时，读取地图
-    in_data = input()
+    if debug_input is None:
+        debug_input = sys.stdin
+    in_data = debug_input.readline().strip()
     current_status = READ_FRAME_AND_MONEY
     read_work_map = []
     line = 100
@@ -65,8 +68,8 @@ def read_util_ok(env = None, read_map=False):
             else:
                 craft = env['craft_tables'][len(env['craft_tables']) - craft_table_to_read]
                 craft.rest_time = int(datas_in[3])
-                craft.raw_status=int(datas_in[4])
-                craft.product_status=int(datas_in[5])
+                craft.raw_status_from_int(int(datas_in[4]))
+                craft.product_with_rest_time(status=int(datas_in[5]))
                 env['craft_tables'][len(env['craft_tables']) - craft_table_to_read] = craft
 
             craft_table_to_read -= 1
@@ -109,7 +112,7 @@ def read_util_ok(env = None, read_map=False):
         elif current_status == READ_FINISH:
             break
         current_status = next_status
-        in_data = input()
+        in_data = debug_input.readline().strip()
     return env
 
 
@@ -133,21 +136,29 @@ def update_orders(craft_tables: List[CraftTable], target_market: Market):
 
 def take_orders(robots: List[Robot], target_market: Market, craft_tables: List[CraftTable]):
     for robot in robots:
-        if robot.order is None or robot.order.status == Order.ORDER_FIN:
+        if len(robot.order) == 0:
             # 当机器人当前没有订单或该订单已经完成时，从市场接取订单
             available_orders = filter_possible_orders(robot, target_market)
+            if len(available_orders) == 0:
+                return
             profits = list()
+            orders: List[Union[Order, None]] = list()
             for order in available_orders:
                 # 估算利润，其中成本的估计较为简单，仅考虑到了时间成本；而收益的估计较为复杂
-                gain = robot.estimate_gain(order, target_market, craft_tables)
+                # 对于买入单，机器人还需要同时接下对应的卖出单以防买入后无法卖出
+                gain, pair_order = robot.estimate_gain(order, target_market, craft_tables)
                 cost = robot.estimate_cost(order, target_market, craft_tables)
                 profits.append(gain - cost)
+                orders.append(pair_order)
             # 选择利润最大订单达成交易
             max_profit_index = profits.index(max(profits))
             max_profit_order = available_orders[max_profit_index]
             max_profit_order.executor = robot.id
             max_profit_order.status = Order.ORDER_RECEIVED
-            robot.order = max_profit_order
+            sell_order = orders[max_profit_index]
+            sell_order.executor = robot.id
+            sell_order.status = Order.ORDER_RECEIVED
+            robot.order = [max_profit_order, sell_order]
 
 
 def filter_possible_orders(robot: Robot, target_market: Market) -> List[Order]:
@@ -173,53 +184,71 @@ def filter_possible_orders(robot: Robot, target_market: Market) -> List[Order]:
     return available_orders
 
 
-def motion_control(robots: List[Robot], crafts_table: List[CraftTable]):
+def motion_control(robots: List[Robot], crafts_table: List[CraftTable]) -> Tuple[List[float], List[float], List[str]]:
     # 运动控制
-    line_speeds = []
-    angle_speeds = []
+    line_speeds: List[float] = []
+    angle_speeds: List[float] = []
+    command: List[str] = []
     for robot in robots:
-        if robot.order is None:
+        if robot.x > 49 or robot.x < 1 or robot.y > 49 or robot.y < 1:
+            # 边界，开始转向
+            line_speeds.append(1)
+            angle_speeds.append(3)
+            continue
+        if len(robot.order) == 0:
             # 无订单时，机器人不运动
             line_speeds.append(0)
             angle_speeds.append(0)
         else:
             # 有订单时，机器人移动到订单所在位置
-            if robot.order.owner == robot.at_table:
+            if robot.order[0].owner == robot.at_table:
                 # 机器人已经到达工作台，完成订单
-                robot.order.status = Order.ORDER_FIN
-                if robot.order.content[0] == 'b':
+                robot.order[0].status = Order.ORDER_FIN
+                if robot.order[0].content[0] == 'b':
                     # 注意b指该订单为控制台买入，即机器人卖出
-                    sys.stdout.write('sell %d\n' % robot.id)
-                    sys.stderr.write('[STDOUT]: sell %d\n' % robot.id)
+                    command.append('sell %d\n' % robot.id)
                 else:
                     # 否则为机器人买入
-                    sys.stdout.write('buy %d\n' % robot.id)
-                    sys.stderr.write('[STDOUT]: buy %d\n' % robot.id)
-            order = robot.order
-            target_position = (crafts_table[order.owner].x, crafts_table[order.owner].y)
+                    command.append('buy %d\n' % robot.id)
+                robot.order.pop(0)
+            if len(robot.order) != 0:
+                order = robot.order[0]
+                target_position = (crafts_table[order.owner].x, crafts_table[order.owner].y)
+            else:
+                target_position = (robot.x, robot.y)
             linear, angle = robot.motion_control(target_position)
             line_speeds.append(linear)
             angle_speeds.append(angle)
-    return line_speeds, angle_speeds
+    return line_speeds, angle_speeds, command
 
 
 if __name__ == '__main__':
+    file_input = open("debug/debug_input", "r")
+    # work_map = read_util_ok(read_map=True, debug_input=file_input)
     work_map = read_util_ok(read_map=True)
     finish()
     market = Market()
     env = None
     while True:
+        # env = read_util_ok(env, debug_input=file_input)
         env = read_util_ok(env)
+        start_time = time.time()
         # 工作台更新订单
         update_orders(env['craft_tables'], market)
         # 机器人接单
         take_orders(env['robots'], market, env['craft_tables'])
         # 机器人根据订单进行运动规划
-        line_speed, angle_speed = motion_control(env['robots'], env['craft_tables'])
+        line_speed, angle_speed, cmds = motion_control(env['robots'], env['craft_tables'])
         sys.stdout.write('%d\n' % env['frame_id'])
         for robot_id in range(4):
-            sys.stdout.write('forward %d %d\n' % (robot_id, line_speed[robot_id]))
-            sys.stderr.write('[STDOUT]: forward %d %d\n' % (robot_id, line_speed[robot_id]))
+            sys.stdout.write('forward %d %f\n' % (robot_id, line_speed[robot_id]))
+            sys.stderr.write('[STDOUT]: forward %d %f\n' % (robot_id, line_speed[robot_id]))
             sys.stdout.write('rotate %d %f\n' % (robot_id, angle_speed[robot_id]))
             sys.stderr.write('[STDOUT]: rotate %d %f\n' % (robot_id, angle_speed[robot_id]))
+        for cmd in cmds:
+            sys.stdout.write(cmd)
+            sys.stderr.write('[STDOUT]: %s' % cmd)
         finish()
+        finish_time = time.time()
+        delta_time = (finish_time - start_time) * 1000
+        sys.stderr.write('[DEBUG]: TIME %d MS\n' % int(delta_time))

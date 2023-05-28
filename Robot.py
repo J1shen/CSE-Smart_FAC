@@ -20,20 +20,24 @@ class Robot:
         self.angle = angle
         self.x = x
         self.y = y
-        self.order: Union[Order, None] = None
+        self.order: List[Order] = []
 
-    def estimate_gain(self, order: Order, target_market: Market, craft_tables: List[CraftTable]) -> float:
+    def estimate_gain(self, order: Order, target_market: Market, craft_tables: List[CraftTable]) \
+            -> Tuple[float, Union[Order, None]]:
         if order.content[0] == 'b':
             # 当该订单为买入订单时(机器人售出)，该订单可以给机器人带来的收益仅仅是订单的价格
-            return order.price
+            return order.price, None
         else:
             # 机器人买入物品的收益是市场上“买卖价差减去机器人对卖出该物体所需的成本的估计”的最大值
-            profits: List[float] = []
+            profits: List[float] = [0.0]
+            buy_orders: List[Union[Order, None]] = [None]
             for buy_order in target_market.orders:
-                if buy_order.content[0] == 'b' and buy_order.content[1] == order.content[1]:
+                if buy_order.content[0] == 'b' and buy_order.content[1] == order.content[1] \
+                        and buy_order.status == Order.ORDER_HANGUP:
                     # 找到了对应的购买订单
                     profits.append(buy_order.price - self.estimate_cost(buy_order, target_market, craft_tables))
-            return max(profits) - order.price
+                    buy_orders.append(buy_order)
+            return max(profits) - order.price, buy_orders[profits.index(max(profits))]
 
     def estimate_cost(self, order: Order, target_market: Market, craft_tables: List[CraftTable]) -> float:
         target_position = (craft_tables[order.owner].x, craft_tables[order.owner].y)
@@ -56,8 +60,25 @@ class Robot:
         # TODO 给定目标点，计算机器人的线速度与角速度
         target_x = target_position[0]
         target_y = target_position[1]
-        pass
-        linear_velocity, angle_velocity = 3, 1.5
+
+        # DEBUG
+        # d_vec = (target_x - self.x, target_y - self.y)
+        # d = math.sqrt(d_vec[0] ** 2 + d_vec[1] ** 2)
+        # v_vec = (self.linear_velocity_x, self.linear_velocity_y)
+        # v = math.sqrt(v_vec[0] ** 2 + v_vec[1] ** 2)
+        # cross_product = v_vec[0]*d_vec[1] - v_vec[1]*d_vec[0]
+        # if v < 1e-6:
+        #     return 0.1, 0.0
+        # if d < 1e-6:
+        #     return v, self.angle_velocity
+        # cos_theta = (d_vec[0] * v_vec[0] + d_vec[1] * v_vec[1]) / (d * v)
+        # if v < 5:
+        #     linear_velocity = v + 0.1
+        # else:
+        #     linear_velocity = v
+        # angle_velocity = 2*v*math.sqrt(1-cos_theta**2)/d * (1 if cross_product > 0 else -1)
+        # DEBUG
+        linear_velocity, angle_velocity = 0.0, 0.0
         return linear_velocity, angle_velocity
 
     def time_estimate(self, target_position) -> int:
@@ -66,6 +87,16 @@ class Robot:
         target_y = target_position[1]
         pass
         estimate_time = 0.0
-        # 这里为了方便debug，利用欧式距离除以速度(5m/s)乘以每秒帧率
-        estimate_time = math.sqrt((target_x - self.x) ** 2 + (target_y - self.y) ** 2) / 5 * 50
+        # debug 使用简单算法
+        # d_vec = (target_x - self.x, target_y - self.y)
+        # d = math.sqrt(d_vec[0] ** 2 + d_vec[1] ** 2)
+        # v_vec = (self.linear_velocity_x, self.linear_velocity_y)
+        # v = math.sqrt(v_vec[0] ** 2 + v_vec[1] ** 2)
+        # angle_v = self.angle_velocity
+        # if angle_v < 1e-6 or v < 1e-6:
+        #     return 2*int(d / 3)
+        # if d < 1e-6:
+        #     return 0
+        # cos_theta = (d_vec[0] * v_vec[0] + d_vec[1] * v_vec[1]) / (d * v)
+        # estimate_time = 2*abs(math.acos(cos_theta)/angle_v) * 50
         return int(estimate_time)

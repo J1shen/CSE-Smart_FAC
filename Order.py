@@ -27,10 +27,20 @@ class Market:
         self.orders = []
 
     def create_order(self, owner, order_type, obj_id) -> Order:
-        prize = Constants.OBJECT_SELL_PRICE[obj_id - 1] if order_type == 's' else Constants.OBJECT_BUY_PRICE[obj_id - 1]
+        price = Constants.OBJECT_SELL_PRICE[obj_id - 1] if order_type == 's' else Constants.OBJECT_BUY_PRICE[obj_id - 1]
         new_order = Order(order_id=len(self.orders),
                           owner=owner,
                           content=(order_type, obj_id),
-                          price=prize)
+                          price=price)
         self.orders.append(new_order)
         return new_order
+
+    def refresh(self, order_id: int):
+        # 以原本的价格重新挂上订单
+        order = self.orders[order_id]
+        obj_id = order.content[1]
+        order_type = order.content[0]
+        price = Constants.OBJECT_SELL_PRICE[obj_id - 1] if order_type == 's' else Constants.OBJECT_BUY_PRICE[obj_id - 1]
+        order.price = price
+        order.status = Order.ORDER_HANGUP
+
