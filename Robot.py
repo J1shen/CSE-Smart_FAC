@@ -1,10 +1,12 @@
 from typing import Union, Tuple, List
-
+from scipy.spatial import KDTree
+import numpy as np
+import copy
+import random
 from Constants import Constants
 from Order import Order, Market
 from CraftTable import CraftTable
 import math
-
 
 class Robot:
     def __init__(self, robot_id, at_table, possession, time_factor, collision_factor,
@@ -56,47 +58,192 @@ class Robot:
         # 成本即为卖出价乘以时间系数之差
         return Constants.OBJECT_BUY_PRICE[order.content[1] - 1] * (current_time_factor - estimate_factor)
 
-    def motion_control(self, target_position) -> Tuple[float, float]:
+
+    def motion_control(self, target_position, path_x, path_y) -> Tuple[float, float]:
         # TODO 给定目标点，计算机器人的线速度与角速度
+
         target_x = target_position[0]
         target_y = target_position[1]
 
-        # DEBUG
-        # d_vec = (target_x - self.x, target_y - self.y)
-        # d = math.sqrt(d_vec[0] ** 2 + d_vec[1] ** 2)
-        # v_vec = (self.linear_velocity_x, self.linear_velocity_y)
-        # v = math.sqrt(v_vec[0] ** 2 + v_vec[1] ** 2)
-        # cross_product = v_vec[0]*d_vec[1] - v_vec[1]*d_vec[0]
-        # if v < 1e-6:
-        #     return 0.1, 0.0
-        # if d < 1e-6:
-        #     return v, self.angle_velocity
-        # cos_theta = (d_vec[0] * v_vec[0] + d_vec[1] * v_vec[1]) / (d * v)
-        # if v < 5:
-        #     linear_velocity = v + 0.1
-        # else:
-        #     linear_velocity = v
-        # angle_velocity = 2*v*math.sqrt(1-cos_theta**2)/d * (1 if cross_product > 0 else -1)
-        # DEBUG
-        linear_velocity, angle_velocity = 0.0, 0.0
+        ro_x = self.x
+        ro_y = self.y
+
+        if math.dist((ro_x,ro_y),(target_x,target_y)) >= 0.45:
+            
+            target_index = len(path_x)-2
+
+            ro_x = self.x
+            ro_y = self.y
+            ro_o = self.angle
+            vc = 0
+            wc = 0
+            if target_index>=1 and math.dist((ro_x,ro_y),(path_x[target_index-1],path_y[target_index-1])) <= 8:
+                target_index -= 1
+
+            if len(path_x)>=2 and math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index])) >= 3:
+                ro_x = self.x
+                ro_y = self.y
+                ro_o = self.angle
+                dist = math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index]))
+                yaw = math.atan2(path_y[target_index] - ro_y, path_x[target_index] - ro_x)
+                 
+                af = yaw - ro_o
+                if af > math.pi:
+                    af -= 2 * math.pi
+                elif af < -math.pi:
+                    af += 2 * math.pi
+
+                if dist > 0:
+                    vc = 1000/dist + 5/(math.fabs(af)+0.5)
+                    wc = 3*af
+                    if dist <= 5 :
+                        vc = 50/dist + 2/(math.fabs(af)+1) 
+                        wc = 4*af
+                        
+            if math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index])) < 3:
+                    target_index -= 1
+                
+            linear_velocity = vc
+            angle_velocity = wc
+
+        if math.dist((ro_x,ro_y),(target_x,target_y)) < 0.45:
+            linear_velocity = 0
+            angle_velocity = math.pi
+            
         return linear_velocity, angle_velocity
 
-    def time_estimate(self, target_position) -> int:
+    def time_estimate(self, target_position) -> float:
         # TODO 给定目标点，估计机器人到达目标点所需时间，单位为帧
         target_x = target_position[0]
         target_y = target_position[1]
-        pass
-        estimate_time = 0.0
-        # debug 使用简单算法
-        # d_vec = (target_x - self.x, target_y - self.y)
-        # d = math.sqrt(d_vec[0] ** 2 + d_vec[1] ** 2)
-        # v_vec = (self.linear_velocity_x, self.linear_velocity_y)
-        # v = math.sqrt(v_vec[0] ** 2 + v_vec[1] ** 2)
-        # angle_v = self.angle_velocity
-        # if angle_v < 1e-6 or v < 1e-6:
-        #     return 2*int(d / 3)
-        # if d < 1e-6:
-        #     return 0
-        # cos_theta = (d_vec[0] * v_vec[0] + d_vec[1] * v_vec[1]) / (d * v)
-        # estimate_time = 2*abs(math.acos(cos_theta)/angle_v) * 50
-        return int(estimate_time)
+        dist = math.dist((self.x,self.y),(target_x,target_y))
+        estimate_time = dist/10+10*math.log(100/(dist+100))
+        
+        return int(estimate_time*50)
+    
+class Node(object):
+    def __init__(self, x, y, cost = 0.0, parent = None):
+        self.x = x
+        self.y = y
+        self.cost = cost
+        self.parent = parent
+
+# 为了避障，规划路线
+class RRT(object):
+    def __init__(self, N_SAMPLE=50, N_ITERATION=500, STEP=5):
+        self.N_SAMPLE = N_SAMPLE
+        self.N_ITERATION = N_ITERATION
+        self.step = STEP
+        self.minx = 0
+        self.maxx = 50
+        self.miny = 0
+        self.maxy = 50
+        self.robot_size = 0.5
+        self.avoid_dist = 1.1
+        self.nodes = []
+        
+    def getv(self, robots: List[Robot], target_positions: List[Tuple[float, float]]):
+        line_speed = []
+        angle_speed = []
+        i = 0
+        for robot in robots:
+            target_x = target_positions[i][0]
+            target_y = target_positions[i][1]
+            path_x, path_y = self.plan(robot.id, robots, robot.x, robot.y, target_x, target_y)
+            lv, av = robot.motion_control(target_positions[i], path_x, path_y)
+            line_speed.append(lv)
+            angle_speed.append(av)
+            i = i + 1
+
+        return line_speed, angle_speed
+
+    def plan(self, id, robots: List[Robot], start_x, start_y, goal_x, goal_y):
+        # Obstacles
+        self.obstacle_x = [-999999]
+        self.obstacle_y = [-999999]
+
+        for robot in robots:
+            if robot.id != id:
+                self.obstacle_x.append(robot.x)
+                self.obstacle_y.append(robot.y)
+        
+        # Obstacle KD Tree
+        self.obstree = KDTree(np.vstack((self.obstacle_x, self.obstacle_y)).T)
+        #sample
+        #sample_x, sample_y = self.sampling()
+        self.start = Node(start_x, start_y)
+        self.goal = Node(goal_x, goal_y)
+        self.obstacle = np.vstack((self.obstacle_x, self.obstacle_y)).T
+        self.nodes = [self.start]
+
+        for i in range(self.N_ITERATION):
+            samp_nodes = self.sampling()
+            samp_x = samp_nodes[0]
+            samp_y = samp_nodes[1]
+            distances = [math.sqrt((node.x-samp_x)**2+(node.y-samp_y)**2) for node in self.nodes]
+            nearest_index = distances.index(min(distances))
+            nearest = self.nodes[nearest_index]
+
+            yaw = math.atan2(samp_y-nearest.y, samp_x-nearest.x)
+            nextnode = self.get_nextnode(yaw, nearest_index)
+           
+            if self.check_obs(nextnode.x, nextnode.y, nearest.x, nearest.y):
+                continue
+
+            self.nodes.append(nextnode)
+
+            if math.hypot(nextnode.x-self.goal.x, nextnode.y-self.goal.y) < self.step:
+                if self.check_obs(nextnode.x, nextnode.y, self.goal.x, self.goal.y):
+                    continue
+                else:
+                    break
+
+        path_x = []
+        path_y = []
+        index = len(self.nodes) - 1
+        while self.nodes[index].parent is not None:
+            path_x.append(self.nodes[index].x)
+            path_y.append(self.nodes[index].y)
+            index = self.nodes[index].parent
+        path_x.append(self.start.x)
+        path_y.append(self.start.y)
+
+        return path_x, path_y
+
+    def get_nextnode(self, yaw, index):
+        nearestNode = self.nodes[index]
+        nextnode = copy.deepcopy(nearestNode)
+        nextnode.parent = index
+        nextnode.x += self.step * math.cos(yaw)
+        nextnode.y += self.step * math.sin(yaw)
+        return nextnode
+
+    def sampling(self):
+        if random.randint(0, 100) > self.N_SAMPLE:
+            return [random.uniform(self.minx, self.maxx),
+                    random.uniform(self.miny, self.maxy)]
+        return [self.goal.x, self.goal.y]
+
+    def check_obs(self, ix, iy, nx, ny):
+        x = ix
+        y = iy
+        dx = nx - ix
+        dy = ny - iy
+        angle = math.atan2(dy, dx)
+        dis = math.hypot(dx, dy)
+
+        step_size = self.robot_size + self.avoid_dist
+        steps = round(dis/step_size)
+        for i in range(steps):
+            distance, index = self.obstree.query(np.array([x, y]))
+            if distance <= self.robot_size + self.avoid_dist:
+                return True
+            x += step_size * math.cos(angle)
+            y += step_size * math.sin(angle)
+
+        # check for goal point
+        distance, index = self.obstree.query(np.array([nx, ny]))
+        if distance <= self.robot_size + self.avoid_dist:
+            return True
+
+        return False
