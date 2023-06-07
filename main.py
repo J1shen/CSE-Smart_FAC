@@ -184,22 +184,28 @@ def filter_possible_orders(robot: Robot, target_market: Market) -> List[Order]:
     return available_orders
 
 
-def motion_control(robots: List[Robot], crafts_table: List[CraftTable]) -> Tuple[List[float], List[float], List[str]]:
-    # 运动控制
-    line_speeds: List[float] = []
-    angle_speeds: List[float] = []
-    command: List[str] = []
+def multi_robot_control(robots: List[Robot], target_positions: List[Tuple[float, float]]):
+    line_speed, angle_speed = [], []
     for robot in robots:
-        if robot.x > 49 or robot.x < 1 or robot.y > 49 or robot.y < 1:
-            # 边界，开始转向
-            line_speeds.append(1)
-            angle_speeds.append(3)
-            continue
         if len(robot.order) == 0:
-            # 无订单时，机器人不运动
-            line_speeds.append(0)
-            angle_speeds.append(0)
-        else:
+            # 机器人没有订单时的决策
+            line_speed.append(0)
+            angle_speed.append(0)
+            continue
+    # TODO 可以在这里写多机器人联合控制的代码，在这里写的控制代码可以获取到所有机器人的位置，故能够较好的完成避障代码的实现
+    # 注意， robot.motion_control()中的代码与这里不同，那里的代码仅能获取到单个机器人的信息，无法进行全局的控制
+
+
+    return line_speed, angle_speed
+
+
+def action_generate(robots: List[Robot], crafts_table: List[CraftTable]) -> Tuple[List[float], List[float], List[str]]:
+    # 决策生成、包括运动决策和买/卖决策
+    command: List[str] = []
+    # 买、卖决策生成
+    target_positions: List[Tuple[float, float]] = []
+    for robot in robots:
+        if len(robot.order) != 0:
             # 有订单时，机器人移动到订单所在位置
             if robot.order[0].owner == robot.at_table:
                 # 机器人已经到达工作台，完成订单
@@ -216,9 +222,11 @@ def motion_control(robots: List[Robot], crafts_table: List[CraftTable]) -> Tuple
                 target_position = (crafts_table[order.owner].x, crafts_table[order.owner].y)
             else:
                 target_position = (robot.x, robot.y)
-            linear, angle = robot.motion_control(target_position)
-            line_speeds.append(linear)
-            angle_speeds.append(angle)
+            target_positions.append(target_position)
+
+    # 多机器人联合运动控制
+    line_speeds, angle_speeds = multi_robot_control(robots, target_positions)
+
     return line_speeds, angle_speeds, command
 
 
@@ -238,7 +246,7 @@ if __name__ == '__main__':
         # 机器人接单
         take_orders(env['robots'], market, env['craft_tables'])
         # 机器人根据订单进行运动规划
-        line_speed, angle_speed, cmds = motion_control(env['robots'], env['craft_tables'])
+        line_speed, angle_speed, cmds = action_generate(env['robots'], env['craft_tables'])
         sys.stdout.write('%d\n' % env['frame_id'])
         for robot_id in range(4):
             sys.stdout.write('forward %d %f\n' % (robot_id, line_speed[robot_id]))
