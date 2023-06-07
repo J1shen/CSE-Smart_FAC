@@ -185,15 +185,9 @@ def filter_possible_orders(robot: Robot, target_market: Market) -> List[Order]:
 
 
 def multi_robot_control(robots: List[Robot], target_positions: List[Tuple[float, float]]):
-    line_speed, angle_speed = [], []
-    for robot in robots:
-        if len(robot.order) == 0:
-            # 机器人没有订单时的决策
-            line_speed.append(0)
-            angle_speed.append(0)
-            continue
     # TODO 可以在这里写多机器人联合控制的代码，在这里写的控制代码可以获取到所有机器人的位置，故能够较好的完成避障代码的实现
-    # 注意， robot.motion_control()中的代码与这里不同，那里的代码仅能获取到单个机器人的信息，无法进行全局的控制
+    # 注意1， robot.motion_control()中的代码与这里不同，那里的代码仅能获取到单个机器人的信息，无法进行全局的控制
+    # 注意2，机器人在部分情况下会出现目标位置与自身位置重合的情况，代码需注意不会出现除零bug等
 
 
     return line_speed, angle_speed
@@ -223,6 +217,11 @@ def action_generate(robots: List[Robot], crafts_table: List[CraftTable]) -> Tupl
             else:
                 target_position = (robot.x, robot.y)
             target_positions.append(target_position)
+        else:
+            # 机器人无订单时，机器人将当前位置设为目标位置
+            target_position = (robot.x, robot.y)
+            target_positions.append(target_position)
+
 
     # 多机器人联合运动控制
     line_speeds, angle_speeds = multi_robot_control(robots, target_positions)
