@@ -5,6 +5,7 @@ from typing import List, Tuple, Union
 from Order import Order, Market
 from Robot import Robot, RRT
 from CraftTable import CraftTable
+import func_timeout
 
 # 读取过程状态机状态
 READ_MAP = 0
@@ -223,9 +224,12 @@ def action_generate(robots: List[Robot], crafts_table: List[CraftTable]) -> Tupl
             target_position = (robot.x, robot.y)
             target_positions.append(target_position)
 
-
-    # 多机器人联合运动控制
-    line_speeds, angle_speeds = multi_robot_control(robots, target_positions)
+    # 多机器人联合运动控制 -- 该函数最多仅运行5ms
+    try:
+        line_speeds, angle_speeds = \
+            func_timeout.func_timeout(0.005, multi_robot_control, (robots, target_positions))
+    except func_timeout.FunctionTimedOut:
+        line_speeds, angle_speeds = [], []
 
     return line_speeds, angle_speeds, command
 
@@ -248,11 +252,12 @@ if __name__ == '__main__':
         # 机器人根据订单进行运动规划
         line_speed, angle_speed, cmds = action_generate(env['robots'], env['craft_tables'])
         sys.stdout.write('%d\n' % env['frame_id'])
-        for robot_id in range(4):
-            sys.stdout.write('forward %d %f\n' % (robot_id, line_speed[robot_id]))
-            sys.stderr.write('[STDOUT]: forward %d %f\n' % (robot_id, line_speed[robot_id]))
-            sys.stdout.write('rotate %d %f\n' % (robot_id, angle_speed[robot_id]))
-            sys.stderr.write('[STDOUT]: rotate %d %f\n' % (robot_id, angle_speed[robot_id]))
+        if len(line_speed) == 4 and len(angle_speed):
+            for robot_id in range(4):
+                sys.stdout.write('forward %d %f\n' % (robot_id, line_speed[robot_id]))
+                sys.stderr.write('[STDOUT]: forward %d %f\n' % (robot_id, line_speed[robot_id]))
+                sys.stdout.write('rotate %d %f\n' % (robot_id, angle_speed[robot_id]))
+                sys.stderr.write('[STDOUT]: rotate %d %f\n' % (robot_id, angle_speed[robot_id]))
         for cmd in cmds:
             sys.stdout.write(cmd)
             sys.stderr.write('[STDOUT]: %s' % cmd)
