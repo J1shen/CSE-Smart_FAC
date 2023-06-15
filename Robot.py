@@ -80,7 +80,7 @@ class Robot:
             if target_index>=1 and math.dist((ro_x,ro_y),(path_x[target_index-1],path_y[target_index-1])) <= 8:
                 target_index -= 1
 
-            if len(path_x)>=2 and math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index])) >= 3:
+            if len(path_x)>=2 and math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index])) >= 2:
                 ro_x = self.x
                 ro_y = self.y
                 ro_o = self.angle
@@ -93,14 +93,14 @@ class Robot:
                 elif af < -math.pi:
                     af += 2 * math.pi
 
-                if dist > 0:
-                    vc = 1000/dist + 5/(math.fabs(af)+0.5)
-                    wc = 3*af
-                    if dist <= 5 :
-                        vc = 50/dist + 2/(math.fabs(af)+1) 
-                        wc = 4*af
+                
+                vc = 1000/dist + 5/(math.fabs(af)+0.5)
+                wc = 3*af
+                if dist <= 2.5 :
+                    vc = 2/(math.fabs(af)+1) 
+                    wc = 4*af
                         
-            if math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index])) < 3:
+            if math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index])) < 1.5:
                     target_index -= 1
                 
             linear_velocity = vc
@@ -139,7 +139,7 @@ class RRT(object):
         self.miny = 0
         self.maxy = 50
         self.robot_size = 0.5
-        self.avoid_dist = 1.1
+        self.avoid_dist = 0.8
         self.nodes = []
         
     def getv(self, robots: List[Robot], target_positions: List[Tuple[float, float]]):
@@ -169,8 +169,6 @@ class RRT(object):
         
         # Obstacle KD Tree
         self.obstree = KDTree(np.vstack((self.obstacle_x, self.obstacle_y)).T)
-        #sample
-        #sample_x, sample_y = self.sampling()
         self.start = Node(start_x, start_y)
         self.goal = Node(goal_x, goal_y)
         self.obstacle = np.vstack((self.obstacle_x, self.obstacle_y)).T
