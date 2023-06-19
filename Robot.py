@@ -8,6 +8,7 @@ from Order import Order, Market
 from CraftTable import CraftTable
 import math
 
+
 class Robot:
     def __init__(self, robot_id, at_table, possession, time_factor, collision_factor,
                  angle_velocity, linear_velocity_x, linear_velocity_y, angle, x, y):
@@ -37,13 +38,18 @@ class Robot:
                 if buy_order.content[0] == 'b' and buy_order.content[1] == order.content[1] \
                         and buy_order.status == Order.ORDER_HANGUP:
                     # 找到了对应的购买订单
-                    profits.append(buy_order.price - self.estimate_cost(buy_order, target_market, craft_tables))
+                    buy_order_table = craft_tables[buy_order.owner]
+                    buy_order_table_position = (buy_order_table.x, buy_order_table.y)
+                    sell_order_table = craft_tables[order.owner]
+                    sell_order_position = (sell_order_table.x, sell_order_table.y)
+                    distance_buy_and_sell = math.dist(buy_order_table_position, sell_order_position)
+                    profits.append(buy_order.price - 0.8 * distance_buy_and_sell / 3 * 50)
                     buy_orders.append(buy_order)
             return max(profits) - order.price, buy_orders[profits.index(max(profits))]
 
     def estimate_cost(self, order: Order, target_market: Market, craft_tables: List[CraftTable]) -> float:
         target_position = (craft_tables[order.owner].x, craft_tables[order.owner].y)
-        estimate_time = self.time_estimate(target_position)
+        estimate_time = self.time_estimate(target_position) * 10
         current_time_factor = self.time_factor
         # 估计再过estimate_time后的系数
         if math.fabs(current_time_factor) < 1e-6:
@@ -58,7 +64,6 @@ class Robot:
         # 成本即为卖出价乘以时间系数之差
         return Constants.OBJECT_BUY_PRICE[order.content[1] - 1] * (current_time_factor - estimate_factor)
 
-
     def motion_control(self, target_position, path_x, path_y) -> Tuple[float, float]:
         # TODO 给定目标点，计算机器人的线速度与角速度
 
@@ -68,69 +73,77 @@ class Robot:
         ro_x = self.x
         ro_y = self.y
 
-        if math.dist((ro_x,ro_y),(target_x,target_y)) >= 0.45:
-            
-            target_index = len(path_x)-2
+        if math.dist((ro_x, ro_y), (target_x, target_y)) >= 0.55:
+
+            target_index = len(path_x) - 2
 
             ro_x = self.x
             ro_y = self.y
             ro_o = self.angle
             vc = 0
             wc = 0
-            if target_index>=1 and math.dist((ro_x,ro_y),(path_x[target_index-1],path_y[target_index-1])) <= 8:
+            if target_index >= 1 and math.dist((ro_x, ro_y), (path_x[target_index - 1], path_y[target_index - 1])) <= 8:
                 target_index -= 1
 
-            if len(path_x)>=2 and math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index])) >= 3:
+            if target_index < 1:
+                vc = random.randint(1, 5)
+                wc = random.randint(1, 3)
+
+            if len(path_x) >= 2 and math.dist((ro_x, ro_y), (path_x[target_index], path_y[target_index])) >= 2:
                 ro_x = self.x
                 ro_y = self.y
                 ro_o = self.angle
-                dist = math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index]))
+                dist = math.dist((ro_x, ro_y), (path_x[target_index], path_y[target_index]))
                 yaw = math.atan2(path_y[target_index] - ro_y, path_x[target_index] - ro_x)
-                 
+
                 af = yaw - ro_o
                 if af > math.pi:
                     af -= 2 * math.pi
                 elif af < -math.pi:
                     af += 2 * math.pi
 
-                if dist > 0:
-                    vc = 1000/dist + 5/(math.fabs(af)+0.5)
-                    wc = 3*af
-                    if dist <= 5 :
-                        vc = 50/dist + 2/(math.fabs(af)+1) 
-                        wc = 4*af
-                        
-            if math.dist((ro_x,ro_y),(path_x[target_index],path_y[target_index])) < 3:
-                    target_index -= 1
-                
+                vc = 1000 / dist + 5 / (math.fabs(af) + 0.5)
+                wc = 5 * af
+                if dist <= 3:
+                    vc = 0
+                    wc = 8 * af
+                    if wc < 0.15:
+                        vc = 4
+                        wc = 0
+
+            if math.dist((ro_x, ro_y), (path_x[target_index], path_y[target_index])) < 1.5:
+                target_index -= 1
+
             linear_velocity = vc
             angle_velocity = wc
 
-        if math.dist((ro_x,ro_y),(target_x,target_y)) < 0.45:
-            linear_velocity = 0
+        if math.dist((ro_x, ro_y), (target_x, target_y)) < 0.55:
+            linear_velocity = 0.15*random.randint(1, 3)
             angle_velocity = math.pi
-            
+
         return linear_velocity, angle_velocity
 
     def time_estimate(self, target_position) -> float:
         # TODO 给定目标点，估计机器人到达目标点所需时间，单位为帧
         target_x = target_position[0]
         target_y = target_position[1]
-        dist = math.dist((self.x,self.y),(target_x,target_y))
-        estimate_time = dist/10+10*math.log(100/(dist+100))
-        
-        return int(estimate_time*50)
-    
+        dist = math.dist((self.x, self.y), (target_x, target_y))
+        estimate_time = dist / 10 + 10 * math.log(100 / (dist + 100))
+
+        return int(estimate_time * 50)
+
+
 class Node(object):
-    def __init__(self, x, y, cost = 0.0, parent = None):
+    def __init__(self, x, y, cost=0.0, parent=None):
         self.x = x
         self.y = y
         self.cost = cost
         self.parent = parent
 
+
 # 为了避障，规划路线
 class RRT(object):
-    def __init__(self, N_SAMPLE=50, N_ITERATION=500, STEP=5):
+    def __init__(self, N_SAMPLE=100, N_ITERATION=100, STEP=5):
         self.N_SAMPLE = N_SAMPLE
         self.N_ITERATION = N_ITERATION
         self.step = STEP
@@ -139,9 +152,9 @@ class RRT(object):
         self.miny = 0
         self.maxy = 50
         self.robot_size = 0.5
-        self.avoid_dist = 1.1
+        self.avoid_dist = 1.2
         self.nodes = []
-        
+
     def getv(self, robots: List[Robot], target_positions: List[Tuple[float, float]]):
         line_speed = []
         angle_speed = []
@@ -162,15 +175,15 @@ class RRT(object):
         self.obstacle_x = [-999999]
         self.obstacle_y = [-999999]
 
+        this_robot_position = (robots[id].x, robots[id].y)
+
         for robot in robots:
-            if robot.id != id:
+            if robot.id != id and math.dist(this_robot_position, (robot.x, robot.y)) < 5 * self.avoid_dist:
                 self.obstacle_x.append(robot.x)
                 self.obstacle_y.append(robot.y)
-        
+
         # Obstacle KD Tree
         self.obstree = KDTree(np.vstack((self.obstacle_x, self.obstacle_y)).T)
-        #sample
-        #sample_x, sample_y = self.sampling()
         self.start = Node(start_x, start_y)
         self.goal = Node(goal_x, goal_y)
         self.obstacle = np.vstack((self.obstacle_x, self.obstacle_y)).T
@@ -180,19 +193,19 @@ class RRT(object):
             samp_nodes = self.sampling()
             samp_x = samp_nodes[0]
             samp_y = samp_nodes[1]
-            distances = [math.sqrt((node.x-samp_x)**2+(node.y-samp_y)**2) for node in self.nodes]
+            distances = [math.sqrt((node.x - samp_x) ** 2 + (node.y - samp_y) ** 2) for node in self.nodes]
             nearest_index = distances.index(min(distances))
             nearest = self.nodes[nearest_index]
 
-            yaw = math.atan2(samp_y-nearest.y, samp_x-nearest.x)
+            yaw = math.atan2(samp_y - nearest.y, samp_x - nearest.x)
             nextnode = self.get_nextnode(yaw, nearest_index)
-           
+
             if self.check_obs(nextnode.x, nextnode.y, nearest.x, nearest.y):
                 continue
 
             self.nodes.append(nextnode)
 
-            if math.hypot(nextnode.x-self.goal.x, nextnode.y-self.goal.y) < self.step:
+            if math.hypot(nextnode.x - self.goal.x, nextnode.y - self.goal.y) < self.step:
                 if self.check_obs(nextnode.x, nextnode.y, self.goal.x, self.goal.y):
                     continue
                 else:
@@ -233,7 +246,7 @@ class RRT(object):
         dis = math.hypot(dx, dy)
 
         step_size = self.robot_size + self.avoid_dist
-        steps = round(dis/step_size)
+        steps = round(dis / step_size)
         for i in range(steps):
             distance, index = self.obstree.query(np.array([x, y]))
             if distance <= self.robot_size + self.avoid_dist:

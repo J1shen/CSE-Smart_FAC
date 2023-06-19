@@ -54,6 +54,10 @@ class CraftTable:
                 continue
             elif order.status == Order.ORDER_HANGUP:
                 # 对于买入订单，依据订单市场调整价格，这里先不作调整
+                if order.content[0] == 's' and order.content[1] >= 4:
+                    order.price *= 0.9999
+                if order.content[0] == 'b' and order.content[1] >= 4:
+                    order.price *= 1.0001
                 continue
             elif order.status == Order.ORDER_FIN:
                 # 订单已经完成

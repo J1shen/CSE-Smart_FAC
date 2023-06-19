@@ -70,7 +70,7 @@ def read_util_ok(env=None, read_map=False, debug_input=None):
                 craft = env['craft_tables'][len(env['craft_tables']) - craft_table_to_read]
                 craft.rest_time = int(datas_in[3])
                 craft.raw_status_from_int(int(datas_in[4]))
-                craft.product_with_rest_time(status=int(datas_in[5]))
+                craft.product_status = int(datas_in[5])
                 env['craft_tables'][len(env['craft_tables']) - craft_table_to_read] = craft
 
             craft_table_to_read -= 1
@@ -157,9 +157,10 @@ def take_orders(robots: List[Robot], target_market: Market, craft_tables: List[C
             max_profit_order.executor = robot.id
             max_profit_order.status = Order.ORDER_RECEIVED
             sell_order = orders[max_profit_index]
-            sell_order.executor = robot.id
-            sell_order.status = Order.ORDER_RECEIVED
-            robot.order = [max_profit_order, sell_order]
+            if sell_order is not None:
+                sell_order.executor = robot.id
+                sell_order.status = Order.ORDER_RECEIVED
+                robot.order = [max_profit_order, sell_order]
 
 
 def filter_possible_orders(robot: Robot, target_market: Market) -> List[Order]:
@@ -227,7 +228,7 @@ def action_generate(robots: List[Robot], crafts_table: List[CraftTable]) -> Tupl
     # 多机器人联合运动控制 -- 该函数最多仅运行5ms
     try:
         line_speeds, angle_speeds = \
-            func_timeout.func_timeout(0.005, multi_robot_control, (robots, target_positions))
+            func_timeout.func_timeout(0.001, multi_robot_control, (robots, target_positions))
     except func_timeout.FunctionTimedOut:
         line_speeds, angle_speeds = [], []
 
